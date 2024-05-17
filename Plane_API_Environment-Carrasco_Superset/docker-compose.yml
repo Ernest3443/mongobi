@@ -1,0 +1,109 @@
+version: '3.3'
+
+networks:
+  business-intelligence-net:
+    driver: bridge
+
+volumes:
+    grafana_data: {}
+
+services:
+
+## --------------------------------------------- DASHBOARD SECTION --------------------------------------------
+  # Container Grafana
+  grafana:
+    image: grafana/grafana:main-ubuntu
+    container_name: grafana
+    user: "0"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+    restart: unless-stopped
+    
+    ports: 
+      - "4050:4050"  
+    expose:
+      - 3000
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+    networks:
+      - business-intelligence-net
+## ------------------------------------------- END DASHBOARD SECTION ------------------------------------------
+
+
+
+
+
+## ----------------------------------------- SYSTEM SECTION -----------------------------------------------
+    
+# CADDY is used to have a single sign-on for all of our applications.  Excluding pgAdmin,
+  #   because pgAdmin refuses to play nice.
+  caddy:
+    image: caddy:2.3.0
+    container_name: caddy
+    ports:
+      - "3000:3000"  # Grafana's Port
+    volumes:
+      - ./caddy:/etc/caddy
+    environment:
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH:-JDJhJDE0JE91S1FrN0Z0VEsyWmhrQVpON1VzdHVLSDkyWHdsN0xNbEZYdnNIZm1pb2d1blg4Y09mL0ZP}
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+    networks:
+      - business-intelligence-net
+
+## --------------------------------------- END SYSTEM SECTION ----------------------------------
+
+## MongoDB SECTION -----------------------------------------------
+  mongodb:
+    image: mongo:latest
+    restart: always
+    environment:
+     MONGO_INITDB_ROOT_USERNAME: admin
+     MONGO_INITDB_ROOT_PASSWORD: pass
+    volumes:
+      - ./init.js:/root/:ro
+    ports:
+      - 27017:27017
+      
+    networks:
+     - business-intelligence-net
+
+  mongo-express:
+    image: mongo-express:latest
+    restart: always
+    ports:
+      - 8081:8081
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: pass
+    networks:
+      - business-intelligence-net
+
+  
+
+  mongodb-bi-connector:
+    image: shoc-mongobi
+    environment:
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: 27017
+    ports:
+     - 3307:3307   
+    networks: 
+     - business-intelligence-net  
+
+##--------------------------------------- END MongoDB SECTION ----------------------------------
